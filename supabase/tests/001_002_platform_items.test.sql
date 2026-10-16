@@ -166,7 +166,8 @@ select tests.ok((select changed_columns = array['name'] and changed_by = '000000
 select tests.ok((select updated_by = '00000000-0000-0000-0000-00000000000c' from public.items where item_code='RAW001'),
   'stamps record updating user');
 update public.items set updated_at = now() where item_code = 'RAW001';
-select tests.ok((select count(*) from public.audit_log where table_name='items' and action='U') = 1,
+select tests.ok((select count(*) from public.audit_log where table_name='items' and action='U'
+                  and record_id = (select id::text from public.items where item_code='RAW001')) = 1,
   'stamp-only update is not audited');
 rollback;
 

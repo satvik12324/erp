@@ -22,8 +22,7 @@ echo "PASS: rollbacks leave an empty public schema"
 
 for f in supabase/migrations/*.sql; do $PSQL -d $DB -f "$f"; echo "up    $(basename "$f")"; done
 
-$PSQL -d $DB -f supabase/seed/dev_seed.sql
-echo "seed  dev_seed.sql"
+for f in $(ls supabase/seed/*.sql | sort); do $PSQL -d $DB -f "$f"; echo "seed  $(basename "$f")"; done
 
 for f in supabase/tests/*.test.sql; do
   psql $BASE -d $DB -q -f "$f" 2>&1 | grep -E 'PASS|FAIL|ERROR|ALL TESTS' | sed 's/^.*NOTICE:  //'
@@ -31,3 +30,4 @@ for f in supabase/tests/*.test.sql; do
 done
 
 PGCONN="$BASE -d $DB" scripts/test-numbering-concurrency.sh
+PGCONN="$BASE -d $DB" scripts/test-stock-concurrency.sh

@@ -153,3 +153,32 @@ MVP: one superuser (the owner). Role and permission tables exist but stay minima
 
 ## D-027 — 2026-10-15 — Testing approach
 **Decision:** Migrations are tested locally on PostgreSQL with a shim for Supabase auth (`supabase/tests/local_supabase_shim.sql`): up → down → up, dev seed, SQL assertion tests, and a two-session concurrency test for numbering (`scripts/test-db.sh`). Only migrations are applied to the hosted project; seed and tests never are.
+
+## D-028 — 2026-10-16 — Build module by module, no calendar plan
+**Decision:** The 8-week plan in D-001/D-002 is replaced by building one module at a time, each finished end to end (schema, tests, live database) before the next. Scope of the first usable version is unchanged.
+**Reason:** Owner's instruction: the system is in its build phase; finishing modules matters more than week labels.
+
+## D-029 — 2026-10-16 — Inventory tracks quantities only
+**Decision:** No stock valuation (no moving average, no cost layers) in the inventory module. Truly variable cost for throughput will come from purchase prices when purchasing is built.
+**Reason:** Owner's decision; there is no GL to post valuation to (Rule 3).
+
+## D-030 — 2026-10-16 — Warehouses and default warehouse logic
+**Decision:** Each company has warehouses with exactly one default (main). The warehouse for a line is resolved as: line value → BOM line issue warehouse (backflush) → item default warehouse → company main. Same order as B1 (document line → ITT1 warehouse → OITM default warehouse).
+**Reason:** GCW has two warehouses with one main; stock must leave from different warehouses.
+
+## D-031 — 2026-10-16 — Inventory documents, ledger and posting
+**Decision:**
+- One header/line structure for goods receipt, goods issue, inventory transfer and receipt from production; behaviour by the fixed category of the document type.
+- DRAFT is editable/deletable. Posting (`post_inventory_document`) assigns the number from the type's series, writes the append-only ledger `stock_movements` and updates `item_warehouse_stock`, in one transaction. Posted documents are immutable; `cancel_inventory_document` posts a reversing document (B1 Cancel) and requires a CANCELLATION reason.
+- Negative stock is refused unless the company allows it or the user has STOCK_OVERRIDE=FULL and gives a NEGATIVE_STOCK_OVERRIDE reason, stored on the movement (D-018).
+- Stock rows are locked in a fixed order during posting, so concurrent postings queue; tested with two sessions issuing the same stock.
+- `fill_production_receipt` builds a receipt from production from the active BOM: one product line, one line per BACKFLUSH component, single level, quantities scaled through UoM conversions. MANUAL components are issued with a goods issue.
+- Opening stock = goods receipt with an OPENING_STOCK reason.
+**Deviation from B1:** No production order yet (comes with the production/DBR module).
+
+## D-032 — 2026-10-16 — Reference master data readable by all company users
+**Decision:** Warehouses and units of measure (uoms, uom_groups, uom_group_conversions) can be read by every user assigned to the company; changing them still needs FULL on WAREHOUSES / UOM.
+**Reason:** Found by tests: a user with INVENTORY=READ could not see warehouse or unit codes on stock screens. These tables hold no sensitive data.
+
+## D-033 — 2026-10-16 — Serial and batch numbers deferred
+**Decision:** No serial/batch tracking yet. Bicycles do carry serial numbers; tracking will be added as its own module (B1 OSRN/OBTN equivalent) later.
