@@ -64,7 +64,7 @@ MVP: one superuser (the owner). Role and permission tables exist but stay minima
 **Decision:**
 - Each document stores its transaction currency, the exchange rate at document date, and amounts in local (company base) currency frozen at that rate.
 - No B1 system currency. Group views convert to a chosen reporting currency at report time.
-- Exchange rates are entered manually, as direct quotation (1 from_currency = rate to_currency).
+- Exchange rates are entered manually per company, as in B1: 1 foreign currency = rate × company base currency (direct quotation). *(Revised 2026-10-15: rates are company-owned, consistent with D-004.)*
 - A foreign-currency document cannot be saved without a rate for its date.
 - Restricting each company to a list of allowed currencies is deferred.
 **Reason:** Owner wants two currency roles (transaction and local). The brief requires a chosen reporting currency for group views. Frozen local amounts keep single-company reports stable.
@@ -102,8 +102,8 @@ MVP: one superuser (the owner). Role and permission tables exist but stay minima
 **Decision:** No invoices or tax codes in the MVP. Tax codes move to Phase 3 (post-MVP). GCW keeps invoicing in Tally Gold.
 **Accepted trade-off:** Shipments are entered in both systems until invoicing moves or a Tally export exists.
 
-## D-017 — 2026-10-14 — Kit completion with backflush
-**Decision:** One "kit completion" document issues components per the BOM and receives the finished kit into stock, in a single transaction, when the kit is completed (before shipping). No WIP stage.
+## D-017 — 2026-10-14 — Receipt from production with backflush
+**Decision:** One "receipt from production" document issues BACKFLUSH components per the active BOM and receives the finished item into stock, in a single transaction, when the item is reported complete (before shipping). No WIP stage. *(Renamed 2026-10-15 from "kit completion" to keep the schema industry-neutral.)*
 **Reason:** Owner's requirement. Equivalent to a B1 production order with backflush issue method plus Receipt from Production, combined.
 **Rejected:** Separate issue and receipt documents; deducting at dispatch.
 
@@ -111,9 +111,9 @@ MVP: one superuser (the owner). Role and permission tables exist but stay minima
 **Decision:** Postings that would take stock below zero are rejected. A supervisor can override with a mandatory reason code; the override is audited.
 **Reason:** Forces receipt discipline so the buffer board stays trustworthy. B1 "block negative inventory" setting.
 
-## D-019 — 2026-10-14 — Finished kit identity
-**Decision:** A finished kit is one stock item per model × size × frame colour. The frame therefore sits in the kit's BOM.
-**Reason:** Owner's requirement. Finished-goods stock can then be allocated to orders by colour.
+## D-019 — 2026-10-14 — Variants are stock items
+**Decision:** Each combination of variant-axis attributes is its own stock item with its own BOM (a variant of a template item). For GCW this means one finished item per model × size × frame colour, with the frame in its BOM.
+**Reason:** Owner's requirement. Finished stock can be allocated to orders by attribute (e.g. colour). Colour, size etc. are attribute data (D-025), never columns.
 **Supersedes:** The Airtable design where frames were picked per order outside the BOM.
 
 ## D-020 — 2026-10-14 — Lead times and buffers start from estimates
@@ -122,8 +122,8 @@ MVP: one superuser (the owner). Role and permission tables exist but stay minima
 **Expectation:** Heavy red/black in the first weeks while buffers calibrate.
 
 ## D-021 — 2026-10-14 — Delivery document in MVP
-**Decision:** The MVP includes a delivery (dispatch) document that removes finished kits from stock against sales orders.
-**Reason:** Finished kits are stocked from kit completion (D-017), so they need a document to leave stock.
+**Decision:** The MVP includes a delivery (dispatch) document that removes finished items from stock against sales orders.
+**Reason:** Finished items are stocked at receipt from production (D-017), so they need a document to leave stock.
 
 ## D-022 — 2026-10-14 — UI and hosting
 **Decision:** Desktop-first, English UI. Supabase project `gcw-erp` (ref `dhwaypzweuonqorsbnfd`) in Mumbai (ap-south-1), because daily users are in Ludhiana.
@@ -131,3 +131,25 @@ MVP: one superuser (the owner). Role and permission tables exist but stay minima
 
 ## D-023 — 2026-10-14 — Go-live and users
 **Decision:** The owner is the only user and superuser through development. The owner will run the system on site in Ludhiana for several months before training other staff. Go-live training is outside the build scope.
+
+## D-024 — 2026-10-15 — Platform admin creates companies
+**Decision:** `user_profiles.is_platform_admin` allows calling `public.create_company()`, which creates the company with default settings and makes the caller its superuser. The flag can only be set via SQL (service role); users cannot change it through the API.
+**Reason:** Bootstrapping: someone must be able to create a company before any company-level authorization exists. Companies cannot be inserted directly.
+**Rejected:** Letting any signed-in user create companies; a global group-admin with rights inside every company.
+
+## D-025 — 2026-10-15 — Generic item master (Rule 1)
+**Decision:**
+- Units: `uoms`, `uom_groups`, `uom_group_conversions` (= B1 OUOM/OUGP/UGP1). Each item has one UoM group and inventory/purchase/sales UoMs inside it. Stock will be kept in the group's base UoM.
+- Characteristics: `attribute_definitions` (TEXT/NUMBER/LIST), `attribute_options`, `item_attribute_values`. LIST attributes can be variant axes.
+- Variants: a template item (never transacted, no BOM) with variant items linked by `template_item_id`; duplicate attribute combinations are rejected.
+- Item codes: entered, or generated from the item group's numbering series with the group code as scope (`{SCOPE}-{N:4}` gives HW-0001, CL-0001...). The GCW CAT-NNNN-VV format will be configured this way, not coded.
+- BOM: `bom_headers`/`bom_lines` (= OITT/ITT1), one active BOM per item, multi-level through recursion, cycles rejected at any depth, issue method BACKFLUSH/MANUAL per line. `bom_explosion()` returns per-unit quantities in base UoMs.
+- Fixed behaviour sets kept as check constraints: procurement BUY/MAKE, replenishment BUFFER/TO_ORDER, item types INVENTORY/NON_INVENTORY/SERVICE. Only INVENTORY items can be buffered.
+**Reason:** Project brief Rule 1. B1 has no native variants; this follows the brief instead.
+
+## D-026 — 2026-10-15 — Same-company integrity by composite foreign keys
+**Decision:** Every company-scoped table has `unique (company_id, id)`, and references between company-scoped tables use composite foreign keys `(company_id, x_id)`. A row can never point to another company's master data, independent of RLS.
+**Reason:** RLS filters what users see; it does not stop a mis-built insert from linking companies. The database guarantees it.
+
+## D-027 — 2026-10-15 — Testing approach
+**Decision:** Migrations are tested locally on PostgreSQL with a shim for Supabase auth (`supabase/tests/local_supabase_shim.sql`): up → down → up, dev seed, SQL assertion tests, and a two-session concurrency test for numbering (`scripts/test-db.sh`). Only migrations are applied to the hosted project; seed and tests never are.
