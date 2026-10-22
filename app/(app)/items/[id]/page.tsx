@@ -4,6 +4,8 @@ import { requireCompany } from "@/lib/context";
 import { ActionForm } from "@/components/ActionForm";
 import { ItemFields } from "@/components/ItemFields";
 import { addBomLine, createBom, createVariant, deleteBomLine, setAttribute, updateItem } from "../actions";
+import { getAccess } from "@/lib/access";
+import { ItemSupplierSection } from "@/components/ItemSupplierSection";
 
 const fmt = (n: number | string) => Number(n).toLocaleString("en-IN", { maximumFractionDigits: 6 });
 
@@ -34,10 +36,19 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
     supabase.from("bom_headers").select("id, base_quantity, uom_id, bom_lines(id, line_no, component_item_id, quantity, uom_id, issue_method, issue_warehouse_id)")
       .eq("item_id", id).eq("is_active", true).maybeSingle(),
     supabase.from("items").select("id, item_code, name").eq("company_id", company.id).eq("is_template", false).eq("is_active", true).neq("id", id).order("item_code").limit(2000),
-    supabase.from("v_stock_on_hand").select("warehouse_code, on_hand, base_uom").eq("item_id", id).order("warehouse_code"),
+    supabase.from("v_stock_on_hand").select("warehouse_id, warehouse_code, on_hand, base_uom").eq("item_id", id).order("warehouse_code"),
     item.is_template ? Promise.resolve({ data: [] as any[] }) : supabase.rpc("bom_explosion", { p_item_id: id }),
     supabase.from("bom_lines").select("bom_headers!inner(item_id, is_active, items!inner(id, item_code, name))").eq("component_item_id", id).eq("bom_headers.is_active", true),
   ]);
+  const access = await getAccess();
+  const [{ data: itemSuppliers }, { data: suppliers }, { data: leadStats }, { data: onOrder }] = await Promise.all([
+    supabase.from("item_suppliers").select("*, business_partners(code, name)").eq("item_id", id).order("is_preferred", { ascending: false }),
+    supabase.from("business_partners").select("id, code, name").eq("company_id", company.id).eq("is_active", true).in("bp_type", ["SUPPLIER", "BOTH"]).order("code"),
+    supabase.from("v_item_supplier_lead_time").select("*").eq("item_id", id),
+    supabase.from("v_on_order").select("warehouse_id, on_order").eq("item_id", id),
+  ]);
+  const onOrderByWh = new Map((onOrder ?? []).map((o: any) => [o.warehouse_id, Number(o.on_order)]));
+  const totalOnOrder = (onOrder ?? []).reduce((s: number, o: any) => s + Number(o.on_order), 0);
 
   const uomCode = new Map((uoms ?? []).map((u) => [u.id, u.code]));
   const whCode = new Map((warehouses ?? []).map((w) => [w.id, w.code]));
@@ -72,20 +83,32 @@ export default async function ItemPage({ params }: { params: Promise<{ id: strin
         </ActionForm>
       </div>
 
+      {(stock ?? []).length === 0 && totalOnOrder > 0 && (
+        <p className="muted">No stock yet · {fmt(totalOnOrder)} on order.</p>
+      )}
       {(stock ?? []).length > 0 && (
         <>
           <h2>Stock</h2>
-          <table className="grid" style={{ maxWidth: 420 }}>
-            <thead><tr><th>Warehouse</th><th className="num">On hand</th></tr></thead>
+          <table className="grid" style={{ maxWidth: 520 }}>
+            <thead><tr><th>Warehouse</th><th className="num">On hand</th><th className="num">On order</th></tr></thead>
             <tbody>
               {(stock ?? []).map((s: any) => (
                 <tr key={s.warehouse_code}>
                   <td className="mono">{s.warehouse_code}</td>
                   <td className={`num ${Number(s.on_hand) < 0 ? "badge neg" : ""}`}>{fmt(s.on_hand)} {s.base_uom}</td>
+                  <td className="num">{onOrderByWh.get(s.warehouse_id) ? fmt(onOrderByWh.get(s.warehouse_id)!) : ""}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </>
+      )}
+
+      {item.is_purchased && !item.is_template && (
+        <>
+          <h2>Suppliers</h2>
+          <ItemSupplierSection mode="item" fixedId={item.id} rows={itemSuppliers ?? []} options={suppliers ?? []} uoms={uoms ?? []}
+            stats={new Map((leadStats ?? []).map((l: any) => [l.business_partner_id, l]))} canEdit={access.full("PURCHASING")} />
         </>
       )}
 

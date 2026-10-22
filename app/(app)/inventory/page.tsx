@@ -20,7 +20,7 @@ export default async function InventoryDocsPage({ searchParams }: { searchParams
   const [{ data: docs, error }, { data: types }] = await Promise.all([
     q,
     supabase.from("document_types").select("id, code, name").eq("company_id", company.id)
-      .in("category", ["GOODS_RECEIPT", "GOODS_ISSUE", "INVENTORY_TRANSFER", "RECEIPT_FROM_PRODUCTION"]).order("code"),
+      .in("category", ["GOODS_RECEIPT", "GOODS_RECEIPT_PO", "GOODS_ISSUE", "INVENTORY_TRANSFER", "RECEIPT_FROM_PRODUCTION"]).order("code"),
   ]);
 
   return (

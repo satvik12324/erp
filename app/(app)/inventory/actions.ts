@@ -12,6 +12,7 @@ export async function createDocument(_: ActionState, fd: FormData): Promise<Acti
     .insert({
       company_id: company.id,
       document_type_id: str(fd, "document_type_id"),
+      business_partner_id: str(fd, "business_partner_id"),
       doc_date: str(fd, "doc_date"),
       reason_code_id: str(fd, "reason_code_id"),
       reference: str(fd, "reference"),
@@ -117,6 +118,15 @@ export async function cancelDocument(_: ActionState, fd: FormData): Promise<Acti
   revalidatePath(`/inventory/${docId}`);
   revalidatePath("/stock");
   return { ok: true, message: `Cancelled by ${data}.` };
+}
+
+export async function copyFromPo(_: ActionState, fd: FormData): Promise<ActionState> {
+  const { supabase } = await requireCompany();
+  const docId = str(fd, "document_id")!;
+  const { data, error } = await supabase.rpc("fill_receipt_from_po", { p_document_id: docId, p_po_id: str(fd, "purchase_order_id") });
+  if (error) return { error: friendly(error) };
+  revalidatePath(`/inventory/${docId}`);
+  return { ok: true, message: data ? `${data} open line(s) copied.` : "Nothing open to copy from that PO." };
 }
 
 export async function deleteDraft(_: ActionState, fd: FormData): Promise<ActionState> {

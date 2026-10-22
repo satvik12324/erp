@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { requireCompany } from "@/lib/context";
 import { ActionForm } from "@/components/ActionForm";
 import {
-  addLine, cancelDocument, deleteDraft, deleteLine, fillProduction, postDocument, updateHeader, updateLineQty,
+  addLine, cancelDocument, copyFromPo, deleteDraft, deleteLine, fillProduction, postDocument, updateHeader, updateLineQty,
 } from "../actions";
 
 const fmt = (n: number | string) => Number(n).toLocaleString("en-IN", { maximumFractionDigits: 6 });
@@ -11,6 +11,7 @@ const CATEGORY: Record<string, string> = {
   GOODS_RECEIPT: "Goods receipt",
   GOODS_ISSUE: "Goods issue",
   INVENTORY_TRANSFER: "Inventory transfer",
+  GOODS_RECEIPT_PO: "Goods receipt PO",
   RECEIPT_FROM_PRODUCTION: "Receipt from production",
 };
 
@@ -20,16 +21,16 @@ export default async function InventoryDocPage({ params }: { params: Promise<{ i
 
   const { data: doc } = await supabase
     .from("inventory_documents")
-    .select("*, document_types(code, name)")
+    .select("*, document_types(code, name), business_partners(code, name)")
     .eq("id", id)
     .eq("company_id", company.id)
     .maybeSingle();
   if (!doc) notFound();
 
-  const [{ data: lines }, { data: items }, { data: uoms }, { data: warehouses }, { data: reasons }, { data: links }, { data: moves }] =
+  const [{ data: lines }, { data: items }, { data: uoms }, { data: warehouses }, { data: reasons }, { data: links }, { data: moves }, { data: openPos }] =
     await Promise.all([
       supabase.from("inventory_document_lines")
-        .select("id, line_no, item_id, direction, quantity, uom_id, quantity_base, warehouse_id, to_warehouse_id, remarks, items(item_code, name, uom_groups(base_uom_id))")
+        .select("id, line_no, item_id, direction, quantity, uom_id, quantity_base, warehouse_id, to_warehouse_id, remarks, purchase_order_line_id, items(item_code, name, uom_groups(base_uom_id)), purchase_order_lines(line_no, purchase_order_id, purchase_orders(doc_number))")
         .eq("document_id", id).order("line_no"),
       supabase.from("items").select("id, item_code, name").eq("company_id", company.id).eq("is_active", true)
         .eq("is_template", false).eq("item_type", "INVENTORY").order("item_code").limit(3000),
@@ -40,6 +41,9 @@ export default async function InventoryDocPage({ params }: { params: Promise<{ i
       doc.status === "DRAFT"
         ? Promise.resolve({ data: [] as any[] })
         : supabase.from("stock_movements").select("id, item_id, warehouse_id, quantity_base, balance_after, override_reason_code_id").eq("document_id", id).order("id"),
+      doc.category === "GOODS_RECEIPT_PO" && doc.status === "DRAFT"
+        ? supabase.from("purchase_orders").select("id, doc_number, doc_date").eq("business_partner_id", doc.business_partner_id).eq("status", "OPEN").order("doc_date")
+        : Promise.resolve({ data: [] as any[] }),
     ]);
 
   const uomCode = new Map((uoms ?? []).map((u) => [u.id, u.code]));
@@ -66,6 +70,7 @@ export default async function InventoryDocPage({ params }: { params: Promise<{ i
           <p className="muted small">
             {doc.reverses_document_id && <>Cancels <Link href={`/inventory/${doc.reverses_document_id}`}>{linkNo.get(doc.reverses_document_id)}</Link> · </>}
             {doc.cancelled_by_document_id && <>Cancelled by <Link href={`/inventory/${doc.cancelled_by_document_id}`}>{linkNo.get(doc.cancelled_by_document_id)}</Link> · </>}
+            {doc.business_partners && <>Supplier <span className="mono">{doc.business_partners.code}</span> {doc.business_partners.name} · </>}
             {doc.posted_at && <>Posted {new Date(doc.posted_at).toLocaleString("en-IN")}</>}
           </p>
         </div>
@@ -132,6 +137,27 @@ export default async function InventoryDocPage({ params }: { params: Promise<{ i
         </div>
       )}
 
+      {/* Copy from PO */}
+      {draft && doc.category === "GOODS_RECEIPT_PO" && (
+        <div className="panel">
+          <strong>Copy from purchase order</strong>{" "}
+          <span className="muted small">Adds the open quantities of an open PO of this supplier. Edit quantities to what actually arrived.</span>
+          <ActionForm action={copyFromPo} resetOnSuccess={false}>
+            <input type="hidden" name="document_id" value={doc.id} />
+            <div className="form-row" style={{ marginTop: 8 }}>
+              <label className="wide">Purchase order
+                <select name="purchase_order_id" required>
+                  <option value="">—</option>
+                  {(openPos ?? []).map((p: any) => <option key={p.id} value={p.id}>{p.doc_number} · {p.doc_date}</option>)}
+                </select>
+              </label>
+              <button type="submit" className="primary">Copy open lines</button>
+            </div>
+            {(openPos ?? []).length === 0 && <p className="muted small">This supplier has no open purchase orders.</p>}
+          </ActionForm>
+        </div>
+      )}
+
       {/* Lines */}
       <h2>Lines</h2>
       <table className="grid">
@@ -146,7 +172,14 @@ export default async function InventoryDocPage({ params }: { params: Promise<{ i
           {(lines ?? []).map((l: any) => (
             <tr key={l.id}>
               <td className="num">{l.line_no}</td>
-              <td><Link href={`/items/${l.item_id}`} className="mono">{l.items?.item_code}</Link> <span className="small">{l.items?.name}</span></td>
+              <td>
+                <Link href={`/items/${l.item_id}`} className="mono">{l.items?.item_code}</Link> <span className="small">{l.items?.name}</span>
+                {l.purchase_order_lines && (
+                  <div className="small muted">
+                    PO <Link href={`/purchasing/${l.purchase_order_lines.purchase_order_id}`}>{l.purchase_order_lines.purchase_orders?.doc_number}</Link>/{l.purchase_order_lines.line_no}
+                  </div>
+                )}
+              </td>
               <td>{isProduction && <span className={`badge ${l.direction > 0 ? "POSTED" : "DRAFT"}`}>{l.direction > 0 ? "product +" : "component −"}</span>}</td>
               {draft ? (
                 <td colSpan={4}>

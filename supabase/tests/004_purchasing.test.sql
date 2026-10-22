@@ -242,4 +242,12 @@ select tests.ok((select projected from public.v_projected_stock p join public.it
   'projected = on hand 50 + on order 100');
 rollback;
 
+-- ------------------------------------------------------------------ my_access helper
+select tests.ok(tests.val_as(:planner, $q$select level from public.my_access(tests.co('SPICE')) where auth_object = 'PURCHASE_PRICES'$q$) = 'NONE',
+  'my_access: planner has no price access');
+select tests.ok(tests.val_as(:planner, $q$select level from public.my_access(tests.co('SPICE')) where auth_object = 'PURCHASING'$q$) = 'FULL',
+  'my_access: planner has full purchasing');
+select tests.ok(tests.val_as(:admin, $q$select bool_and(level = 'FULL') from public.my_access(tests.co('SPICE'))$q$)::boolean,
+  'my_access: superuser has FULL everywhere');
+
 \echo 'ALL PURCHASING TESTS PASSED'

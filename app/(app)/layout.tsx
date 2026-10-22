@@ -15,13 +15,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <div className="nav-group">Inventory</div>
           <NavLink href="/inventory">Documents</NavLink>
           <NavLink href="/stock">Stock on hand</NavLink>
+          <div className="nav-group">Purchasing</div>
+          <NavLink href="/purchasing">Purchase orders</NavLink>
+          <NavLink href="/purchasing/open">Open PO lines</NavLink>
+          <NavLink href="/purchasing/lead-times">Lead times</NavLink>
+          <NavLink href="/partners">Business partners</NavLink>
           <div className="nav-group">Item master</div>
           <NavLink href="/items">Items</NavLink>
           <NavLink href="/setup/item-groups">Item groups</NavLink>
           <NavLink href="/setup/attributes">Attributes</NavLink>
           <NavLink href="/setup/uoms">Units of measure</NavLink>
           <div className="nav-group">Setup</div>
+          <NavLink href="/setup/company">Company</NavLink>
           <NavLink href="/setup/warehouses">Warehouses</NavLink>
+          <NavLink href="/setup/exchange-rates">Exchange rates</NavLink>
           <NavLink href="/setup/numbering">Numbering &amp; doc types</NavLink>
           <NavLink href="/setup/reasons">Reason codes</NavLink>
         </nav>

@@ -9,6 +9,7 @@ drop view if exists public.v_projected_stock;
 drop view if exists public.v_on_order;
 drop view if exists public.v_open_po_lines;
 
+drop function if exists public.my_access(uuid);
 drop function if exists public.fill_receipt_from_po(uuid, uuid);
 drop function if exists public.cancel_purchase_order(uuid, uuid);
 drop function if exists public.close_purchase_order(uuid, uuid, uuid);

@@ -1017,6 +1017,24 @@ select t.company_id, t.item_id, t.business_partner_id,
 from public.v_purchase_lead_times t
 group by t.company_id, t.item_id, t.business_partner_id;
 
+-- The current user's authorization level per object in a company, so screens can hide what the
+-- database would refuse anyway (e.g. price columns, post buttons). Not a security boundary.
+create or replace function public.my_access(p_company_id uuid)
+returns table (auth_object text, level text)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select o.code,
+         case when p_company_id in (select private.companies_with_access(o.code, 'FULL')) then 'FULL'
+              when p_company_id in (select private.companies_with_access(o.code, 'READ')) then 'READ'
+              else 'NONE' end
+  from public.auth_objects o
+$$;
+revoke all on function public.my_access(uuid) from public, anon;
+grant execute on function public.my_access(uuid) to authenticated;
+
 -- -----------------------------------------------------------------------------
 -- 6. RLS, grants, triggers, indexes
 -- -----------------------------------------------------------------------------
