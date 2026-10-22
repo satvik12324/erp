@@ -266,3 +266,6 @@ MVP: one superuser (the owner). Role and permission tables exist but stay minima
 - A pending proposal expires as soon as its condition breaks. The target changes only through `decide_buffer_change`, where the approver can adjust the quantity (Rule 4: never auto-change).
 - Snapshots, events and proposals are written only by functions; the API cannot insert, update or delete them.
 **Rejected:** Recomputing history from the stock ledger on demand: stock buffers could be rebuilt that way, but order zones depend on due dates that may have been rescheduled since.
+
+## D-045 — 2026-10-22 — Scheduled snapshots
+**Decision:** pg_cron job `erp-buffer-snapshots` runs `take_buffer_snapshot` for every active company hourly at :05. Hourly rather than daily because each company's "day" follows its own time zone; the snapshot is idempotent per local day. Boards also refresh it when opened.
