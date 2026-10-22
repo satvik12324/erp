@@ -23,6 +23,11 @@ export async function updateSettings(_: ActionState, fd: FormData): Promise<Acti
     red_from_pct: num(fd, "red_from_pct"),
     allow_negative_stock: bool(fd, "allow_negative_stock"),
     over_receipt_pct: num(fd, "over_receipt_pct") ?? 0,
+    default_time_buffer_days: num(fd, "default_time_buffer_days"),
+    spike_threshold_pct: num(fd, "spike_threshold_pct"),
+    dbm_red_days: num(fd, "dbm_red_days"),
+    dbm_green_days: num(fd, "dbm_green_days"),
+    dbm_step_pct: num(fd, "dbm_step_pct"),
   }).eq("company_id", company.id);
   if (error) {
     if (error.message.includes("zones_ck")) return { error: "Yellow must start below red, both between 1 and 100." };

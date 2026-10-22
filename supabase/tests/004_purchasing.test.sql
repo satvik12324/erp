@@ -166,11 +166,11 @@ select tests.ok(tests.try_as(:planner, format($q$insert into public.inventory_do
   values (tests.co('SPICE'), %L, 10, (select id from public.items where item_code = 'PKG001'), 1, %L)$q$, :'g', :'l')) like '23514: PO PO/26-27/0001 belongs to another supplier%',
   'cannot receive another supplier''s PO line');
 select tests.ok(tests.try_as(:planner, $q$insert into public.inventory_documents (company_id, document_type_id)
-  values (tests.co('SPICE'), (select id from public.document_types where code = 'GRPO' and company_id = tests.co('SPICE')))$q$) like '23514: A supplier is required%',
+  values (tests.co('SPICE'), (select id from public.document_types where code = 'GRPO' and company_id = tests.co('SPICE')))$q$) like '23514: A business partner is required%',
   'goods receipt PO needs a supplier');
 select tests.ok(tests.try_as(:planner, $q$insert into public.inventory_documents (company_id, document_type_id, business_partner_id)
   values (tests.co('SPICE'), (select id from public.document_types where code = 'GR' and company_id = tests.co('SPICE')),
-          (select id from public.business_partners where code = 'S-TRADER'))$q$) like '23514: A supplier is required on goods receipt PO documents and only there%',
+          (select id from public.business_partners where code = 'S-TRADER'))$q$) like '23514: A business partner is required on goods receipt PO and delivery documents and only there%',
   'plain goods receipt takes no supplier');
 rollback;
 

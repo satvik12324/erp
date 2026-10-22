@@ -10,7 +10,7 @@ BASE="${PGCONN:--h /var/lib/pgtest -p 54329 -U postgres}"
 DB=erp_test
 PSQL="psql $BASE -v ON_ERROR_STOP=1 -q -o /dev/null"
 
-$PSQL -d postgres -c "drop database if exists $DB" -c "create database $DB" 2>/dev/null
+$PSQL -d postgres -c "drop database if exists $DB with (force)" -c "create database $DB" 2>/dev/null
 $PSQL -d $DB -f supabase/tests/local_supabase_shim.sql
 
 for f in supabase/migrations/*.sql; do $PSQL -d $DB -f "$f"; echo "up    $(basename "$f")"; done

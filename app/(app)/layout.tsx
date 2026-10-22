@@ -12,6 +12,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="brand">TOC ERP</div>
         <nav>
           <NavLink href="/">Home</NavLink>
+          <div className="nav-group">TOC</div>
+          <NavLink href="/sales/board">Order board</NavLink>
+          <NavLink href="/buffers">Buffer board</NavLink>
+          <NavLink href="/replenishment">Replenishment</NavLink>
+          <NavLink href="/buffers/dbm">Buffer changes</NavLink>
+          <NavLink href="/buffers/reasons">Red/black causes</NavLink>
+          <div className="nav-group">Sales</div>
+          <NavLink href="/sales">Sales orders</NavLink>
           <div className="nav-group">Inventory</div>
           <NavLink href="/inventory">Documents</NavLink>
           <NavLink href="/stock">Stock on hand</NavLink>

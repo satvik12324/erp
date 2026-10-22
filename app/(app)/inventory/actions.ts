@@ -135,3 +135,12 @@ export async function deleteDraft(_: ActionState, fd: FormData): Promise<ActionS
   if (error) return { error: friendly(error) };
   redirect("/inventory");
 }
+
+export async function copyFromSo(_: ActionState, fd: FormData): Promise<ActionState> {
+  const { supabase } = await requireCompany();
+  const docId = str(fd, "document_id")!;
+  const { data, error } = await supabase.rpc("fill_delivery_from_so", { p_document_id: docId, p_so_id: str(fd, "sales_order_id") });
+  if (error) return { error: friendly(error) };
+  revalidatePath(`/inventory/${docId}`);
+  return { ok: true, message: data ? `${data} open line(s) copied.` : "Nothing open to copy from that order." };
+}

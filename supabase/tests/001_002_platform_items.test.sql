@@ -143,7 +143,7 @@ select tests.ok(private.fiscal_year_label(1::smallint, date '2026-05-01') = '202
 select tests.ok(private.next_number((select id from public.number_ranges where code='INV'), '', date '2026-05-01') = 'INV/26-27/00001', 'INV first number');
 select tests.ok(private.next_number((select id from public.number_ranges where code='INV'), '', date '2027-03-31') = 'INV/26-27/00002', 'INV same FY continues');
 select tests.ok(private.next_number((select id from public.number_ranges where code='INV'), '', date '2027-04-01') = 'INV/27-28/00001', 'INV resets in new FY');
-select tests.ok(private.next_number((select id from public.number_ranges where code='SO'),  '', date '2026-12-31') = 'SO-2026-00001', 'SO calendar year');
+select tests.ok(private.next_number((select id from public.number_ranges where code='SO' and company_id = tests.co('MAPLE')), '', date '2025-12-31') = 'SO-2025-00001', 'SO calendar year');
 rollback;
 
 -- gapless: a rolled-back number is reissued

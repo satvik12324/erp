@@ -211,3 +211,58 @@ MVP: one superuser (the owner). Role and permission tables exist but stay minima
 
 ## D-039 — 2026-10-22 — Lead time and on-order views
 **Decision:** `v_purchase_lead_times` (per receipt line: receipt date − PO date, days late vs expected), `v_item_supplier_lead_time` (count, average, 80th percentile, max, % on time, next to planned), `v_on_order` (= B1 OITW.OnOrder / ERPNext Bin.ordered_qty), `v_projected_stock` (on hand + on order; reserved from sales orders will be subtracted when sales exists → TOC net-flow position). All views, no stored counters.
+
+## D-040 — 2026-10-22 — Sales orders with time buffers
+**Decision:**
+- Header/lines as B1 ORDR/RDR1, built the same way as purchase orders (D-036). The life cycle is DRAFT → OPEN → CLOSED/CANCELLED. `release_sales_order` assigns the number, freezes the exchange rate (D-010) and fixes the time buffer.
+- Every order needs a **due date** (the date promised to the customer) to be released. It also has a **time buffer** in days (`company_settings.default_time_buffer_days`, default 14, can be changed per order). On an open order, only the due date and buffer can be rescheduled.
+- Prices are kept in `sales_order_line_prices`, guarded by SALES_PRICES (same pattern as D-037). Store users (INVENTORY=READ) can read open orders so they can deliver.
+- Closing short needs an SO_CLOSE reason. An order closes itself when fully delivered and reopens if that delivery is cancelled. An order can only be cancelled if nothing has been delivered.
+**SAP difference:** B1 has no time buffer. The due date stands in for B1's DocDueDate. Priority comes from buffer penetration, not from the due date.
+**Rejected:** One buffer per line. Orders ship as a whole in both current businesses, and a header buffer keeps the board readable. Revisit if partial shipping becomes normal.
+
+## D-041 — 2026-10-22 — Order buffer status
+**Decision:**
+- `v_sales_order_buffer` computes everything live; nothing is stored.
+  - buffer start = due date − buffer days
+  - penetration = (today − buffer start) ÷ buffer days
+  - zone uses the company cut-points (D-012); BLACK is above 100% (late)
+- "Today" is the company's local date (`private.company_today`, from companies.timezone), not the UTC date.
+- The board also shows a simple stock check: each open line compared with on hand in its warehouse, ignoring competing orders. This is not yet a full-kit allocation.
+
+## D-042 — 2026-10-22 — Delivery
+**Decision:** Delivery (= B1 ODLN/DLN1) is an inventory document category, mirroring goods receipt PO (D-038):
+- A customer on the header and an SO line link on each line.
+- A trigger on the stock ledger updates the delivered quantity.
+- `fill_delivery_from_so` copies the open quantities into the delivery.
+- Over-delivery uses the same tolerance and OVER_RECEIPT permission as over-receipt.
+**Reserved stock** (`v_reserved`, = B1 IsCommited) is the open SO quantity. `v_projected_stock` is now on hand + on order − reserved.
+
+## D-043 — 2026-10-22 — Stock buffers and replenishment
+**Decision:**
+- `item_buffers` holds one target quantity (in the base unit) per item and warehouse. Only items with replenishment policy BUFFER can have one; templates cannot.
+- `v_buffer_status` works out the following:
+  - **allocated** = open SO quantity of lines whose order buffer has started, plus **spikes** (a single line ≥ `spike_threshold_pct` of the target, default 50%, counted straight away whatever its date)
+  - **available** = on hand − allocated
+  - **penetration** = (target − available) ÷ target; BLACK when available ≤ 0
+  - **net flow** = on hand + on order − allocated
+  - **to replenish** = target − net flow (minimum 0)
+- `v_replenishment` lists buffers below target, plus TO_ORDER items whose open orders exceed on hand + on order.
+  - It adds the preferred supplier, lead time, and the order quantity in the supplier's unit, rounded up to the minimum and multiple.
+  - BUY lines become draft POs, one per supplier, after the user selects them. MAKE lines are listed until the production module exists.
+**Rejected:** Allocating every open order straight away, which hides when demand is actually due and over-replenishes for orders far in the future. Treating spikes as separate make-to-order demand, which needs order-specific supply tracking we don't have yet.
+
+## D-044 — 2026-10-22 — Buffer history, red/black reasons, DBM
+**Decision:**
+- `take_buffer_snapshot(company)` writes one row per stock buffer and per open order per day.
+  - Running it again the same day replaces that day's zone.
+  - It runs from the boards when they open, and daily by schedule where pg_cron exists.
+- Entering RED, or BLACK, from a better zone creates a `buffer_events` row. The user records the cause (BUFFER_RED / BUFFER_BLACK reason plus a note). The Pareto ranks causes over a chosen period.
+- DBM is based on the snapshots:
+  - all of the last `dbm_red_days` (default 7) in red or black → INCREASE proposal
+  - all of the last `dbm_green_days` (default 30) in green → DECREASE proposal
+  - the step is `dbm_step_pct` (default 33%)
+  - nothing is proposed while the target changed inside the window, or after a rejection inside the window
+- A pending proposal expires as soon as its condition breaks. The target changes only through `decide_buffer_change`, where the approver can adjust the quantity (Rule 4: never auto-change).
+- Snapshots, events and proposals are written only by functions; the API cannot insert, update or delete them.
+**Rejected:** Recomputing history from the stock ledger on demand: stock buffers could be rebuilt that way, but order zones depend on due dates that may have been rescheduled since.

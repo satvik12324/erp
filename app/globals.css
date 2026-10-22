@@ -117,3 +117,18 @@ button:disabled, fieldset:disabled button { opacity: .55; cursor: wait; }
   .nav-group, .brand { display: none; }
   .content { padding: 14px 16px; }
 }
+
+/* TOC buffer zones */
+.zone { display: inline-block; min-width: 58px; text-align: center; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 4px; letter-spacing: .02em; }
+.zone.GREEN  { background: #d1fadf; color: #05603a; }
+.zone.YELLOW { background: #fef0c7; color: #93370d; }
+.zone.RED    { background: #fee4e2; color: #912018; }
+.zone.BLACK  { background: #101828; color: #fff; }
+.meter { position: relative; width: 120px; height: 8px; background: #eef2f6; border-radius: 4px; overflow: hidden; display: inline-block; vertical-align: middle; }
+.meter > span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+.meter > span.GREEN { background: #32d583; } .meter > span.YELLOW { background: #fdb022; }
+.meter > span.RED { background: #f04438; } .meter > span.BLACK { background: #101828; }
+.zone-counts { display: flex; gap: 8px; margin: 6px 0 12px; }
+.zone-counts .zone { font-size: 13px; padding: 6px 12px; }
+tr.row-BLACK td:first-child { box-shadow: inset 3px 0 0 #101828; }
+tr.row-RED td:first-child { box-shadow: inset 3px 0 0 #f04438; }

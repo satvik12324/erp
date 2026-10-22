@@ -5,13 +5,13 @@ import { createDocument } from "../actions";
 
 export default async function NewInventoryDocPage() {
   const { supabase, company } = await requireCompany();
-  const [{ data: types }, { data: reasons }, { data: suppliers }] = await Promise.all([
+  const [{ data: types }, { data: reasons }, { data: partners }] = await Promise.all([
     supabase.from("document_types").select("id, code, name, category").eq("company_id", company.id).eq("is_active", true)
-      .in("category", ["GOODS_RECEIPT", "GOODS_RECEIPT_PO", "GOODS_ISSUE", "INVENTORY_TRANSFER", "RECEIPT_FROM_PRODUCTION"]).order("code"),
+      .in("category", ["GOODS_RECEIPT", "GOODS_RECEIPT_PO", "GOODS_ISSUE", "INVENTORY_TRANSFER", "RECEIPT_FROM_PRODUCTION", "DELIVERY"]).order("code"),
     supabase.from("reason_codes").select("id, reason_type, code, name").eq("company_id", company.id).eq("is_active", true)
       .in("reason_type", ["OPENING_STOCK", "STOCK_ADJUSTMENT"]).order("code"),
     supabase.from("business_partners").select("id, code, name").eq("company_id", company.id).eq("is_active", true)
-      .in("bp_type", ["SUPPLIER", "BOTH"]).order("code"),
+      .order("code"),
   ]);
   const today = new Date().toISOString().slice(0, 10);
 
@@ -36,10 +36,10 @@ export default async function NewInventoryDocPage() {
               </select>
             </label>
             <label>Date<input name="doc_date" type="date" defaultValue={today} required /></label>
-            <label>Supplier (goods receipt PO only)
+            <label>Business partner (supplier on goods receipt PO, customer on delivery)
               <select name="business_partner_id" defaultValue="">
                 <option value="">—</option>
-                {(suppliers ?? []).map((s) => <option key={s.id} value={s.id}>{s.code} · {s.name}</option>)}
+                {(partners ?? []).map((s) => <option key={s.id} value={s.id}>{s.code} · {s.name}</option>)}
               </select>
             </label>
             <label>Reason

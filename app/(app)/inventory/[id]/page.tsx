@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { requireCompany } from "@/lib/context";
 import { ActionForm } from "@/components/ActionForm";
 import {
-  addLine, cancelDocument, copyFromPo, deleteDraft, deleteLine, fillProduction, postDocument, updateHeader, updateLineQty,
+  addLine, cancelDocument, copyFromPo, copyFromSo, deleteDraft, deleteLine, fillProduction, postDocument, updateHeader, updateLineQty,
 } from "../actions";
 
 const fmt = (n: number | string) => Number(n).toLocaleString("en-IN", { maximumFractionDigits: 6 });
@@ -13,6 +13,7 @@ const CATEGORY: Record<string, string> = {
   INVENTORY_TRANSFER: "Inventory transfer",
   GOODS_RECEIPT_PO: "Goods receipt PO",
   RECEIPT_FROM_PRODUCTION: "Receipt from production",
+  DELIVERY: "Delivery",
 };
 
 export default async function InventoryDocPage({ params }: { params: Promise<{ id: string }> }) {
@@ -27,10 +28,10 @@ export default async function InventoryDocPage({ params }: { params: Promise<{ i
     .maybeSingle();
   if (!doc) notFound();
 
-  const [{ data: lines }, { data: items }, { data: uoms }, { data: warehouses }, { data: reasons }, { data: links }, { data: moves }, { data: openPos }] =
+  const [{ data: lines }, { data: items }, { data: uoms }, { data: warehouses }, { data: reasons }, { data: links }, { data: moves }, { data: openPos }, { data: openSos }] =
     await Promise.all([
       supabase.from("inventory_document_lines")
-        .select("id, line_no, item_id, direction, quantity, uom_id, quantity_base, warehouse_id, to_warehouse_id, remarks, purchase_order_line_id, items(item_code, name, uom_groups(base_uom_id)), purchase_order_lines(line_no, purchase_order_id, purchase_orders(doc_number))")
+        .select("id, line_no, item_id, direction, quantity, uom_id, quantity_base, warehouse_id, to_warehouse_id, remarks, purchase_order_line_id, sales_order_line_id, items(item_code, name, uom_groups(base_uom_id)), purchase_order_lines(line_no, purchase_order_id, purchase_orders(doc_number)), sales_order_lines(line_no, sales_order_id, sales_orders(doc_number))")
         .eq("document_id", id).order("line_no"),
       supabase.from("items").select("id, item_code, name").eq("company_id", company.id).eq("is_active", true)
         .eq("is_template", false).eq("item_type", "INVENTORY").order("item_code").limit(3000),
@@ -43,6 +44,9 @@ export default async function InventoryDocPage({ params }: { params: Promise<{ i
         : supabase.from("stock_movements").select("id, item_id, warehouse_id, quantity_base, balance_after, override_reason_code_id").eq("document_id", id).order("id"),
       doc.category === "GOODS_RECEIPT_PO" && doc.status === "DRAFT"
         ? supabase.from("purchase_orders").select("id, doc_number, doc_date").eq("business_partner_id", doc.business_partner_id).eq("status", "OPEN").order("doc_date")
+        : Promise.resolve({ data: [] as any[] }),
+      doc.category === "DELIVERY" && doc.status === "DRAFT"
+        ? supabase.from("sales_orders").select("id, doc_number, due_date, customer_reference").eq("business_partner_id", doc.business_partner_id).eq("status", "OPEN").order("due_date")
         : Promise.resolve({ data: [] as any[] }),
     ]);
 
@@ -70,7 +74,7 @@ export default async function InventoryDocPage({ params }: { params: Promise<{ i
           <p className="muted small">
             {doc.reverses_document_id && <>Cancels <Link href={`/inventory/${doc.reverses_document_id}`}>{linkNo.get(doc.reverses_document_id)}</Link> · </>}
             {doc.cancelled_by_document_id && <>Cancelled by <Link href={`/inventory/${doc.cancelled_by_document_id}`}>{linkNo.get(doc.cancelled_by_document_id)}</Link> · </>}
-            {doc.business_partners && <>Supplier <span className="mono">{doc.business_partners.code}</span> {doc.business_partners.name} · </>}
+            {doc.business_partners && <>{doc.category === "DELIVERY" ? "Customer" : "Supplier"} <span className="mono">{doc.business_partners.code}</span> {doc.business_partners.name} · </>}
             {doc.posted_at && <>Posted {new Date(doc.posted_at).toLocaleString("en-IN")}</>}
           </p>
         </div>
@@ -158,6 +162,27 @@ export default async function InventoryDocPage({ params }: { params: Promise<{ i
         </div>
       )}
 
+      {/* Copy from SO */}
+      {draft && doc.category === "DELIVERY" && (
+        <div className="panel">
+          <strong>Copy from sales order</strong>{" "}
+          <span className="muted small">Adds the open quantities of an open order of this customer. Edit quantities to what actually ships.</span>
+          <ActionForm action={copyFromSo} resetOnSuccess={false}>
+            <input type="hidden" name="document_id" value={doc.id} />
+            <div className="form-row" style={{ marginTop: 8 }}>
+              <label className="wide">Sales order
+                <select name="sales_order_id" required>
+                  <option value="">—</option>
+                  {(openSos ?? []).map((o: any) => <option key={o.id} value={o.id}>{o.doc_number} · due {o.due_date}{o.customer_reference ? ` · ${o.customer_reference}` : ""}</option>)}
+                </select>
+              </label>
+              <button type="submit" className="primary">Copy open lines</button>
+            </div>
+            {(openSos ?? []).length === 0 && <p className="muted small">This customer has no open sales orders.</p>}
+          </ActionForm>
+        </div>
+      )}
+
       {/* Lines */}
       <h2>Lines</h2>
       <table className="grid">
@@ -174,6 +199,11 @@ export default async function InventoryDocPage({ params }: { params: Promise<{ i
               <td className="num">{l.line_no}</td>
               <td>
                 <Link href={`/items/${l.item_id}`} className="mono">{l.items?.item_code}</Link> <span className="small">{l.items?.name}</span>
+                {l.sales_order_lines && (
+                  <div className="small muted">
+                    SO <Link href={`/sales/${l.sales_order_lines.sales_order_id}`}>{l.sales_order_lines.sales_orders?.doc_number}</Link>/{l.sales_order_lines.line_no}
+                  </div>
+                )}
                 {l.purchase_order_lines && (
                   <div className="small muted">
                     PO <Link href={`/purchasing/${l.purchase_order_lines.purchase_order_id}`}>{l.purchase_order_lines.purchase_orders?.doc_number}</Link>/{l.purchase_order_lines.line_no}

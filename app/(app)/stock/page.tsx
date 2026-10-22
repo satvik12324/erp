@@ -23,17 +23,19 @@ export default async function StockPage({ searchParams }: { searchParams: Search
   if (neg) query = query.lt("on_hand", 0);
   else if (!zero) query = query.neq("on_hand", 0);
 
-  const [{ data: rows, error }, { data: warehouses }, { data: onOrder }] = await Promise.all([
+  const [{ data: rows, error }, { data: warehouses }, { data: onOrder }, { data: reserved }] = await Promise.all([
     query,
     supabase.from("warehouses").select("id, code, name").eq("company_id", company.id).order("code"),
     supabase.from("v_on_order").select("item_id, warehouse_id, on_order").eq("company_id", company.id),
+    supabase.from("v_reserved").select("item_id, warehouse_id, reserved").eq("company_id", company.id),
   ]);
+  const rs = new Map((reserved ?? []).map((o: any) => [`${o.item_id}-${o.warehouse_id}`, Number(o.reserved)]));
   const oo = new Map((onOrder ?? []).map((o: any) => [`${o.item_id}-${o.warehouse_id}`, Number(o.on_order)]));
 
   return (
     <section>
       <h1>Stock on hand</h1>
-      <p className="muted">Quantities in each item&apos;s base unit, from posted documents.</p>
+      <p className="muted">Quantities in each item&apos;s base unit, from posted documents. Reserved = open sales orders; available = on hand + on order − reserved (B1 &quot;Available&quot;).</p>
       <form className="form-row panel" method="get">
         <label className="wide">Item code or name<input name="q" defaultValue={q ?? ""} /></label>
         <label>Warehouse
@@ -48,7 +50,7 @@ export default async function StockPage({ searchParams }: { searchParams: Search
       </form>
       {error && <p className="msg err">{error.message}</p>}
       <table className="grid">
-        <thead><tr><th>Item</th><th>Name</th><th>Warehouse</th><th className="num">On hand</th><th className="num">On order</th><th>Unit</th><th>Last movement</th></tr></thead>
+        <thead><tr><th>Item</th><th>Name</th><th>Warehouse</th><th className="num">On hand</th><th className="num">On order</th><th className="num">Reserved</th><th className="num">Available</th><th>Unit</th><th>Last movement</th></tr></thead>
         <tbody>
           {(rows ?? []).map((r: any) => (
             <tr key={`${r.item_id}-${r.warehouse_id}`}>
@@ -57,11 +59,13 @@ export default async function StockPage({ searchParams }: { searchParams: Search
               <td className="mono">{r.warehouse_code}</td>
               <td className="num">{Number(r.on_hand) < 0 ? <span className="badge neg">{fmt(r.on_hand)}</span> : fmt(r.on_hand)}</td>
               <td className="num">{oo.get(`${r.item_id}-${r.warehouse_id}`) ? fmt(oo.get(`${r.item_id}-${r.warehouse_id}`)!) : ""}</td>
+              <td className="num">{rs.get(`${r.item_id}-${r.warehouse_id}`) ? fmt(rs.get(`${r.item_id}-${r.warehouse_id}`)!) : ""}</td>
+              <td className="num">{fmt(Number(r.on_hand) + (oo.get(`${r.item_id}-${r.warehouse_id}`) ?? 0) - (rs.get(`${r.item_id}-${r.warehouse_id}`) ?? 0))}</td>
               <td className="mono">{r.base_uom}</td>
               <td className="small muted">{r.last_movement_at ? new Date(r.last_movement_at).toLocaleString("en-IN") : ""}</td>
             </tr>
           ))}
-          {(rows ?? []).length === 0 && <tr><td colSpan={7} className="empty">No stock to show.</td></tr>}
+          {(rows ?? []).length === 0 && <tr><td colSpan={9} className="empty">No stock to show.</td></tr>}
         </tbody>
       </table>
     </section>

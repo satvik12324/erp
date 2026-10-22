@@ -11,6 +11,7 @@ const USERS = {
   admin: "00000000-0000-0000-0000-00000000000a",
   planner: "00000000-0000-0000-0000-00000000000c",
   viewer: "00000000-0000-0000-0000-00000000000d",
+  pricer: "00000000-0000-0000-0000-00000000000e",
 };
 
 const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
@@ -87,6 +88,42 @@ await check("lead time stats", admin.from("v_item_supplier_lead_time").select("*
 await check("projected stock view", admin.from("v_projected_stock").select("*").eq("company_id", C).limit(5));
 await check("movements on doc", admin.from("stock_movements").select("id, item_id, warehouse_id, quantity_base, balance_after, override_reason_code_id").eq("document_id", doc.id), (d) => d.length === 1);
 await check("viewer sees open PO lines (INVENTORY=READ)", as("viewer").from("v_open_po_lines").select("purchase_order_line_id").eq("company_id", C));
+
+// ---- sales and TOC screens, as the pages issue them
+const soType = await one(admin.from("document_types").select("id").eq("company_id", C).eq("code", "SO"));
+const dlvType = await one(admin.from("document_types").select("id").eq("company_id", C).eq("code", "DLV"));
+const cust = await one(admin.from("business_partners").select("id").eq("code", "C-RETAIL"));
+await check("SO list", admin.from("sales_orders").select("id, doc_number, doc_date, due_date, time_buffer_days, status, close_type, currency_code, customer_reference, business_partners(code, name), sales_order_lines(count)").eq("company_id", C).in("status", ["DRAFT", "OPEN"]), (d) => d.length >= 1);
+await check("SO new: settings", admin.from("company_settings").select("default_time_buffer_days").eq("company_id", C).maybeSingle(), (d) => d.default_time_buffer_days === 14);
+const so = await check("create SO (planner)", planner.from("sales_orders").insert({ company_id: C, document_type_id: soType.id, business_partner_id: cust.id, due_date: new Date(Date.now() + 5 * 864e5).toISOString().slice(0, 10) }).select("id").single());
+const sol = await check("add SO line", planner.from("sales_order_lines").insert({ company_id: C, sales_order_id: so.id, line_no: 10, item_id: item.id, quantity: 2 }).select("id").single());
+await check("pricer sets SO price", as("pricer").from("sales_order_line_prices").upsert({ company_id: C, sales_order_line_id: sol.id, unit_price: 300, discount_pct: 0 }, { onConflict: "sales_order_line_id" }));
+await check("release SO rpc", planner.rpc("release_sales_order", { p_so_id: so.id }), (d) => typeof d === "string" && d.startsWith("SO/"));
+await check("SO detail", admin.from("sales_orders").select("*, business_partners(id, code, name), document_types(name)").eq("id", so.id).maybeSingle(), (d) => d?.status === "OPEN");
+await check("SO lines", admin.from("sales_order_lines").select("*, items(item_code, name)").eq("sales_order_id", so.id), (d) => d.length === 1);
+await check("SO prices hidden (planner)", planner.from("sales_order_line_prices").select("sales_order_line_id").in("sales_order_line_id", [sol.id]), (d) => d.length === 0);
+await check("SO buffer row", admin.from("v_sales_order_buffer").select("*").eq("sales_order_id", so.id).maybeSingle(), (d) => d?.zone === "YELLOW" && Number(d.penetration) === 64);
+await check("item stock for SO page", admin.from("item_warehouse_stock").select("item_id, warehouse_id, on_hand").eq("company_id", C));
+await check("snapshot rpc (planner)", planner.rpc("take_buffer_snapshot", { p_company_id: C }), (d) => d === 4);
+await check("order board", planner.from("v_sales_order_buffer").select("*").eq("company_id", C), (d) => d.length >= 2);
+await check("order events needing reason", planner.from("buffer_events").select("sales_order_id").eq("company_id", C).eq("buffer_kind", "ORDER").is("reason_code_id", null));
+await check("buffer board", planner.from("v_buffer_status").select("*").eq("company_id", C), (d) => d.length === 4);
+await check("buffer list embed", planner.from("item_buffers").select("id, item_id, warehouse_id, target_qty, is_active, items(item_code, name), warehouses(code)").eq("company_id", C), (d) => d[0]?.items?.item_code);
+await check("pending proposals", planner.from("buffer_change_proposals").select("item_buffer_id, direction, proposed_target").eq("company_id", C).eq("status", "PENDING"));
+await check("events page embed", planner.from("buffer_events").select("id, buffer_kind, zone, entered_on, penetration, reason_code_id, reason_note, item_buffer_id, sales_order_id, item_buffers(items(item_code, name), warehouses(code)), sales_orders(doc_number, business_partners(code)), reason_codes(code, name)").eq("company_id", C), (d) => d.length >= 1);
+const ev = (await planner.from("buffer_events").select("id, zone").eq("company_id", C).eq("zone", "BLACK").limit(1).single()).data;
+const blackReason = await one(admin.from("reason_codes").select("id").eq("company_id", C).eq("reason_type", "BUFFER_BLACK").eq("code", "DEMAND_SPIKE"));
+await check("record reason rpc", planner.rpc("set_buffer_event_reason", { p_event_id: ev.id, p_reason_id: blackReason.id, p_note: "smoke" }));
+await check("DBM page embeds", planner.from("buffer_change_proposals").select("id, proposed_on, direction, current_target, proposed_target, approved_target, status, decided_at, decision_note, item_buffers(target_qty, items(id, item_code, name), warehouses(code))").eq("company_id", C));
+await check("replenishment view", planner.from("v_replenishment").select("*").eq("company_id", C), (d) => d.some((r) => r.item_id === item.id));
+await check("viewer reads buffer board", as("viewer").from("v_buffer_status").select("item_buffer_id").eq("company_id", C), (d) => d.length === 4);
+
+const dlv = await check("create delivery draft", admin.from("inventory_documents").insert({ company_id: C, document_type_id: dlvType.id, business_partner_id: cust.id }).select("id").single());
+await check("open SOs for copy", admin.from("sales_orders").select("id, doc_number, due_date, customer_reference").eq("business_partner_id", cust.id).eq("status", "OPEN"), (d) => d.length >= 1);
+await check("fill delivery rpc", admin.rpc("fill_delivery_from_so", { p_document_id: dlv.id, p_so_id: so.id }), (d) => d === 1);
+await check("delivery lines with SO ref", admin.from("inventory_document_lines").select("id, sales_order_line_id, items(item_code), purchase_order_lines(line_no), sales_order_lines(line_no, sales_order_id, sales_orders(doc_number))").eq("document_id", dlv.id), (d) => d[0]?.sales_order_lines?.sales_orders?.doc_number?.startsWith("SO/"));
+await check("post delivery", admin.rpc("post_inventory_document", { p_document_id: dlv.id, p_override_reason_id: null }), (d) => typeof d === "string");
+await check("SO closed after delivery", admin.from("sales_orders").select("status, close_type").eq("id", so.id).single(), (d) => d.status === "CLOSED" && d.close_type === "DELIVERED");
 
 console.log(failed ? `${failed} FAILED` : "ALL API CHECKS PASSED");
 process.exit(failed ? 1 : 0);

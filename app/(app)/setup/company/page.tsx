@@ -41,9 +41,20 @@ export default async function CompanyPage() {
             <label className="narrow">Buffer red from %<input name="red_from_pct" type="number" min={2} max={100} defaultValue={s?.red_from_pct} required /></label>
             <label className="narrow">Over-receipt tolerance %<input name="over_receipt_pct" type="number" step="any" min={0} defaultValue={s?.over_receipt_pct} /></label>
             <label className="check"><input type="checkbox" name="allow_negative_stock" defaultChecked={s?.allow_negative_stock} />Allow negative stock</label>
+          </div>
+          <div className="form-row" style={{ marginTop: 8 }}>
+            <label className="narrow">Default order time buffer (days)<input name="default_time_buffer_days" type="number" min={1} defaultValue={s?.default_time_buffer_days} required /></label>
+            <label className="narrow">Order spike, % of stock target<input name="spike_threshold_pct" type="number" min={1} defaultValue={s?.spike_threshold_pct} required /></label>
+            <label className="narrow">DBM: days in red to propose increase<input name="dbm_red_days" type="number" min={1} defaultValue={s?.dbm_red_days} required /></label>
+            <label className="narrow">DBM: days in green to propose decrease<input name="dbm_green_days" type="number" min={1} defaultValue={s?.dbm_green_days} required /></label>
+            <label className="narrow">DBM step %<input name="dbm_step_pct" type="number" min={1} max={100} defaultValue={s?.dbm_step_pct} required /></label>
             <button type="submit" className="primary">Save settings</button>
           </div>
-          <p className="muted small">Black = buffer penetration above 100%. Negative stock off means postings below zero need a superuser override with a reason.</p>
+          <p className="muted small">
+            Black = buffer penetration above 100% (orders) or nothing available (stock). Negative stock off means postings below zero need a
+            superuser override with a reason. A sales order line of at least the spike % of a stock buffer target counts against the
+            buffer immediately, not only once its own time buffer starts.
+          </p>
         </ActionForm>
       </div>
 
