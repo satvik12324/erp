@@ -182,3 +182,32 @@ MVP: one superuser (the owner). Role and permission tables exist but stay minima
 
 ## D-033 — 2026-10-16 — Serial and batch numbers deferred
 **Decision:** No serial/batch tracking yet. Bicycles do carry serial numbers; tracking will be added as its own module (B1 OSRN/OBTN equivalent) later.
+
+## D-034 — 2026-10-22 — ERPNext as secondary reference design
+**Decision:** Keep this system; use ERPNext's data model as a second reference next to SAP B1 (read the design, copy no code).
+**Reason:** Owner's choice (option 3 of 3). Copying ERPNext code is not possible across stacks (Python/Frappe/MariaDB) and would make the system GPL-3.0; switching to ERPNext would discard the TOC-first core.
+**Rejected:** Porting ERPNext source; replacing this system with ERPNext + a TOC app.
+
+## D-035 — 2026-10-22 — Business partners
+**Decision:** One `business_partners` table for suppliers and customers (type SUPPLIER / CUSTOMER / BOTH, = B1 OCRD), company-owned (D-004), with addresses, contacts and registration IDs as child tables. A default currency (NULL = company base) and a default lead time per partner.
+**Store users** (INVENTORY=READ) can read partners and open POs so they can receive goods without purchasing rights.
+
+## D-036 — 2026-10-22 — Purchase orders
+**Decision:**
+- Header/lines as B1 OPOR/POR1. DRAFT is free to edit/delete; `release_purchase_order` assigns the number, freezes currency and the exchange rate of the PO date (refused if no rate exists, D-010) and sets OPEN.
+- Two dates per line (from ERPNext): `required_date` (when we need it) and `expected_date` (supplier promise; defaults to PO date + item-supplier or supplier lead time).
+- Open POs may change quantity (not below received), dates, remarks and add lines; supplier, currency, rate, date and number are frozen.
+- Line short-close and whole-PO close need a PO_CLOSE reason; closed quantities stop counting as on order. A PO closes itself when everything open is received (close_type RECEIVED) and reopens if such a receipt is cancelled. Cancel only without receipts.
+- No approval workflow yet (single user). No PDF yet.
+**Defaults taken without owner answer (2026-10-22):** prices recorded on lines; no approval; PDF later; supplier import from Airtable only after owner confirms.
+
+## D-037 — 2026-10-22 — Purchase prices kept apart
+**Decision:** Prices live in `purchase_order_line_prices` (unit price, discount %, in PO currency per PO unit), guarded by PURCHASE_PRICES. Users with PURCHASING but not PURCHASE_PRICES see and receive POs without prices.
+**Reason:** Applies D-008 (costs hidden from store via separate tables; RLS cannot hide columns).
+
+## D-038 — 2026-10-22 — Goods receipt PO
+**Decision:** Goods receipt PO (= B1 OPDN/PDN1, ERPNext Purchase Receipt) is an inventory document category with a supplier on the header and a PO line link per line. Posting updates the PO line's received quantity through a trigger on the stock ledger, inside the posting transaction; cancellation (reversal) reduces it again. `fill_receipt_from_po` copies open quantities (B1 Copy From). Receipts without a PO are allowed (no link).
+**Over-receipt:** refused beyond `company_settings.over_receipt_pct` (default 0) unless the user has OVER_RECEIPT=FULL (ERPNext over_delivery_receipt_allowance + role).
+
+## D-039 — 2026-10-22 — Lead time and on-order views
+**Decision:** `v_purchase_lead_times` (per receipt line: receipt date − PO date, days late vs expected), `v_item_supplier_lead_time` (count, average, 80th percentile, max, % on time, next to planned), `v_on_order` (= B1 OITW.OnOrder / ERPNext Bin.ordered_qty), `v_projected_stock` (on hand + on order; reserved from sales orders will be subtracted when sales exists → TOC net-flow position). All views, no stored counters.

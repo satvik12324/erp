@@ -148,10 +148,10 @@ rollback;
 
 -- gapless: a rolled-back number is reissued
 begin;
-select private.next_number((select id from public.number_ranges where code='PO'));
+select private.next_number((select id from public.number_ranges where code='PO' and company_id = tests.co('MAPLE')));
 rollback;
 begin;
-select tests.ok(private.next_number((select id from public.number_ranges where code='PO')) = 'PO000001',
+select tests.ok(private.next_number((select id from public.number_ranges where code='PO' and company_id = tests.co('MAPLE'))) = 'PO000001',
   'rolled-back number is reused (gapless)');
 rollback;
 

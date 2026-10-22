@@ -3,7 +3,7 @@
 # then rolls back; session B must wait, then receive the number A gave back (no gap, no duplicate).
 set -euo pipefail
 PSQL="psql ${PGCONN:--h /var/lib/pgtest -p 54329 -U postgres -d erp_test} -At -q"
-RANGE="(select id from public.number_ranges where code='PO')"
+RANGE="(select id from public.number_ranges where code='PO' and company_id=(select id from public.companies where code='MAPLE'))"
 $PSQL -c "begin; select 'A:'||private.next_number($RANGE); select pg_sleep(3); rollback;" > /tmp/numA.txt &
 sleep 0.5
 START=$(date +%s.%N)
