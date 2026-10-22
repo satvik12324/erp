@@ -269,3 +269,19 @@ MVP: one superuser (the owner). Role and permission tables exist but stay minima
 
 ## D-045 — 2026-10-22 — Scheduled snapshots
 **Decision:** pg_cron job `erp-buffer-snapshots` runs `take_buffer_snapshot` for every active company hourly at :05. Hourly rather than daily because each company's "day" follows its own time zone; the snapshot is idempotent per local day. Boards also refresh it when opened.
+
+## D-046 — 2026-10-22 — Full-kit check by buffer-priority allocation
+**Decision:**
+- On-hand stock is allocated to all open sales orders in priority order (order-buffer penetration highest first, then earliest buffer start, then document number), computed live by `private.full_kit_allocation`; nothing is reserved or stored.
+- Multi-level: the short part of a MAKE item with an active BOM is exploded one level at a time in low-level-code order, so stocked sub-assemblies (e.g. built wheels, painted frames) are used before their components, and component demand of all orders competes in the same priority order. All component lines count, whatever their issue method.
+- Order kit status: READY (all open lines on hand), BUILDABLE (the rest can be made now from components on hand, any depth), SHORT (something missing that cannot be made now). Shown on the order board, the order (shortage tree with on order and next PO date) and a Full kit work queue (ready to ship / build next / shortages).
+- Finished units already built are pooled, not held for the order they were built for: the most urgent order takes them (owner's choice).
+- No gating yet: a receipt from production is not linked to an order. Rope-based release gating comes with work orders (production/DBR module).
+**SAP difference:** B1 commits stock first-come (OITW.IsCommited) with no priority allocation; ERPNext checks material for one work order without competing demand.
+**Rejected:** Holding built units for their order (needs a receipt-from-production → SO line link); single-level explosion (GCW has stocked sub-assemblies); stored allocations (would go stale on every posting and reschedule).
+
+## D-047 — 2026-10-22 — Dependent demand in stock buffers and replenishment
+**Decision:**
+- `v_buffer_status.allocated` also counts component requirements from D-046 under the same rule as direct demand (D-043): orders whose buffer has started, plus single requirements ≥ spike %. Shown separately as `dependent_allocated`. The demand is netted against higher-level stock, so finished units on hand create no component demand.
+- `v_replenishment` TO_ORDER lines include dependent demand from all open orders, so model-specific components of made-to-order items are proposed before the parent is built; MAKE to-order items (e.g. sub-assemblies) are listed with the quantity to make.
+**Reason:** Without it, component buffers read green while open orders already need their stock, and to-order components were never proposed (owner agreed 2026-10-22).

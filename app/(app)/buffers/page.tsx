@@ -93,7 +93,9 @@ export default async function BufferBoardPage({ searchParams }: { searchParams: 
                   ) : fmt(r.target_qty)}
                 </td>
                 <td className="num">{fmt(r.on_hand)}</td>
-                <td className="num" title={Number(r.spike_qty) ? `includes spike orders ${fmt(r.spike_qty)}` : ""}>{fmt(r.allocated)}{Number(r.spike_qty) > 0 && " *"}</td>
+                <td className="num" title={[Number(r.dependent_allocated) ? `components for orders ${fmt(r.dependent_allocated)}` : "", Number(r.spike_qty) ? `includes spike orders ${fmt(r.spike_qty)}` : ""].filter(Boolean).join("; ")}>
+                  {fmt(r.allocated)}{Number(r.spike_qty) > 0 && " *"}{Number(r.dependent_allocated) > 0 && " †"}
+                </td>
                 <td className="num">{fmt(r.available)}</td>
                 <td className="num">{fmt(r.on_order)}</td>
                 <td className="num"><strong>{Number(r.replenish_qty) > 0 ? fmt(r.replenish_qty) : ""}</strong></td>
@@ -117,7 +119,8 @@ export default async function BufferBoardPage({ searchParams }: { searchParams: 
       </table>
       <p className="muted small">
         Allocated = open sales order quantity whose order buffer has started, plus spikes (*): single orders of at least the
-        company spike % of target. To replenish = target − (on hand + on order − allocated).
+        company spike % of target. It includes components needed to build ordered items that are not in stock (†), under
+        the same rule; hover for the split. To replenish = target − (on hand + on order − allocated).
       </p>
 
       {canEdit && (

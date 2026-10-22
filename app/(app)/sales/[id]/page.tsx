@@ -5,6 +5,7 @@ import { getAccess } from "@/lib/access";
 import { fmt, money, statusClass } from "@/lib/format";
 import { ActionForm } from "@/components/ActionForm";
 import { Meter, Zone } from "@/components/Zone";
+import { KitBadge, RequirementBadge } from "@/components/Kit";
 import {
   addSoLine, cancelSo, closeSo, deleteDraftSo, deleteSoLine, deliverSo, releaseSo, updateSoHeader, updateSoLine,
 } from "../actions";
@@ -27,7 +28,7 @@ export default async function SoPage({ params }: { params: Promise<{ id: string 
   const canEdit = access.full("SALES");
   const editable = canEdit && (so.status === "DRAFT" || so.status === "OPEN");
 
-  const [{ data: lines }, { data: items }, { data: uoms }, { data: warehouses }, { data: reasons }, { data: currencies }, { data: dlvTypes }, { data: buffer }, { data: stock }] =
+  const [{ data: lines }, { data: items }, { data: uoms }, { data: warehouses }, { data: reasons }, { data: currencies }, { data: dlvTypes }, { data: buffer }, { data: stock }, { data: kit }] =
     await Promise.all([
       supabase.from("sales_order_lines").select("*, items(item_code, name)").eq("sales_order_id", id).order("line_no"),
       supabase.from("items").select("id, item_code, name").eq("company_id", company.id).eq("is_active", true).eq("is_template", false)
@@ -40,6 +41,7 @@ export default async function SoPage({ params }: { params: Promise<{ id: string 
       supabase.from("document_types").select("id, name").eq("company_id", company.id).eq("category", "DELIVERY").eq("is_active", true).order("code"),
       supabase.from("v_sales_order_buffer").select("*").eq("sales_order_id", id).maybeSingle(),
       supabase.from("item_warehouse_stock").select("item_id, warehouse_id, on_hand").eq("company_id", company.id),
+      supabase.from("v_full_kit_lines").select("*").eq("sales_order_id", id).order("seq"),
     ]);
 
   const lineIds = (lines ?? []).map((l: any) => l.id);
@@ -85,7 +87,8 @@ export default async function SoPage({ params }: { params: Promise<{ id: string 
               {buffer.time_buffer_days} days, started {buffer.buffer_start} · due {buffer.due_date}
               {" "}({buffer.days_to_due >= 0 ? `${buffer.days_to_due} days left` : `${-buffer.days_to_due} days late`})
             </span>
-            <span className="small">{buffer.stock_covered ? "· all open lines covered by stock on hand" : "· not all lines covered by stock on hand"}</span>
+            <span className="small">· kit</span> <a href="#kit"><KitBadge status={buffer.kit_status} /></a>
+            <span className="small">priority #{buffer.priority_rank}</span>
           </div>
         </div>
       )}
@@ -301,6 +304,41 @@ export default async function SoPage({ params }: { params: Promise<{ id: string 
         </div>
       )}
 
+      {(kit ?? []).length > 0 && (
+        <>
+          <h2 id="kit">Full kit</h2>
+          <p className="muted small">
+            Stock is allocated to all open orders in priority order; this order is #{buffer?.priority_rank}. Quantities in
+            base units. Short finished units are broken down into their components, indented below them.
+          </p>
+          <table className="grid">
+            <thead>
+              <tr>
+                <th>Item</th><th>Warehouse</th><th className="num">Required</th><th className="num">Allocated</th>
+                <th className="num">Short</th><th></th><th className="num">On order</th><th>Next receipt</th>
+              </tr>
+            </thead>
+            <tbody>
+              {kitTree(kit ?? []).map((r: any) => (
+                <tr key={r.seq}>
+                  <td style={{ paddingLeft: 8 + r.level * 20 }}>
+                    {r.level > 0 && <span className="muted">└ </span>}
+                    <Link href={`/items/${r.item_id}`} className="mono">{r.item_code}</Link> <span className="small">{r.item_name}</span>
+                  </td>
+                  <td className="mono">{r.warehouse_code}</td>
+                  <td className="num">{fmt(r.required_qty, 3)} <span className="small">{r.base_uom}</span></td>
+                  <td className="num">{fmt(r.allocated_qty, 3)}</td>
+                  <td className="num">{Number(r.short_qty) > 0 ? fmt(r.short_qty, 3) : ""}</td>
+                  <td><RequirementBadge status={r.requirement_status} /></td>
+                  <td className="num">{Number(r.on_order) > 0 ? fmt(r.on_order, 3) : ""}</td>
+                  <td>{r.requirement_status === "SHORT" ? r.next_expected_date ?? <span className="badge neg">nothing on order</span> : ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
       <h2>Deliveries</h2>
       <table className="grid" style={{ maxWidth: 640 }}>
         <thead><tr><th>Number</th><th>Date</th><th>Status</th></tr></thead>
@@ -317,4 +355,23 @@ export default async function SoPage({ params }: { params: Promise<{ id: string 
       </table>
     </section>
   );
+}
+
+// Depth-first order: each requirement followed by the components it was exploded into.
+function kitTree(rows: any[]) {
+  const children = new Map<number | null, any[]>();
+  for (const r of rows) {
+    const k = r.parent_seq ?? null;
+    if (!children.has(k)) children.set(k, []);
+    children.get(k)!.push(r);
+  }
+  const out: any[] = [];
+  const walk = (parent: number | null) => {
+    for (const r of children.get(parent) ?? []) {
+      out.push(r);
+      walk(r.seq);
+    }
+  };
+  walk(null);
+  return out;
 }

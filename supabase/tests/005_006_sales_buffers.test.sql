@@ -4,6 +4,9 @@
 -- Seed state: SPICE SO/26-27/0001 (1 CTN GM-500G, due +20), MAPLE SO-2026-00001 (10 CS HW-0001, due +5, buffer 10).
 -- =============================================================================
 \set ON_ERROR_STOP 1
+-- Buffers use the company's local date (private.company_today). Every dated assertion below is for SPICE, so
+-- current_date must be SPICE's date: otherwise the tests fail whenever Kolkata is already on the next day.
+set timezone = 'Asia/Kolkata';
 \set admin   '''00000000-0000-0000-0000-00000000000a'''
 \set planner '''00000000-0000-0000-0000-00000000000c'''
 \set viewer  '''00000000-0000-0000-0000-00000000000d'''

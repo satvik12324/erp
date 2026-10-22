@@ -132,3 +132,4 @@ button:disabled, fieldset:disabled button { opacity: .55; cursor: wait; }
 .zone-counts .zone { font-size: 13px; padding: 6px 12px; }
 tr.row-BLACK td:first-child { box-shadow: inset 3px 0 0 #101828; }
 tr.row-RED td:first-child { box-shadow: inset 3px 0 0 #f04438; }
+a.strong, .strong { font-weight: 600; }
